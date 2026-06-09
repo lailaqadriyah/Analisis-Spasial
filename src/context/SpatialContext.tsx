@@ -4,17 +4,18 @@ import * as turf from '@turf/turf';
 export interface SwimmingPool {
   id: string;
   name: string;
-  category: 'Umum' | 'Hotel' | 'Waterpark';
+  kategori: 'Rekreasi' | 'Atlet';
+  jenisKolam: 'Indoor' | 'Outdoor';
   description: string;
   address: string;
   district: string;
-  ticketPrice: number;
+  ticketPrice: string;     // string karena harga bervariasi (weekday/weekend, anak/dewasa)
+  ticketPriceMin: number;  // untuk keperluan sorting numerik
   rating: number;
   openingHours: string;
   latitude: number;
   longitude: number;
   facilities: string[];
-  imageDesc: string; // Brief description of what styling to display
 }
 
 interface SpatialContextType {
@@ -22,8 +23,10 @@ interface SpatialContextType {
   filteredPools: SwimmingPool[];
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  selectedCategory: string;
-  setSelectedCategory: (category: string) => void;
+  selectedKategori: string;        // 'Semua' | 'Rekreasi' | 'Atlet'
+  setSelectedKategori: (v: string) => void;
+  selectedJenis: string;           // 'Semua' | 'Indoor' | 'Outdoor'
+  setSelectedJenis: (v: string) => void;
   selectedPool: SwimmingPool | null;
   setSelectedPool: (pool: SwimmingPool | null) => void;
   userLocation: [number, number] | null;
@@ -43,145 +46,791 @@ interface SpatialContextType {
 
 const SpatialContext = createContext<SpatialContextType | undefined>(undefined);
 
-// Padang, Indonesia coordinates
-const PADANG_CENTER: [number, number] = [-0.9471, 100.4172];
+const PADANG_CENTER: [number, number] = [-0.9305, 100.3598]; // sekitar GOR Agus Salim
 
-// Authentic swimming pools dataset in Padang
+// ============================================================
+// DATABASE 46 KOLAM RENANG KOTA PADANG
+// Koordinat diparse dari data spreadsheet pengguna.
+// Format asli pakai titik ribuan → dikonversi ke desimal presisi.
+// ============================================================
 const POOLS_DATA: SwimmingPool[] = [
   {
-    id: 'pool-teratai',
-    name: 'Kolam Renang Teratai GOR Agus Salim',
-    category: 'Umum',
-    description: 'Kolam renang standar olimpiade milik pemerintah kota Padang. Sangat populer untuk latihan atlet renang daerah maupun rekreasi keluarga di akhir pekan. Memiliki tribun penonton yang besar.',
-    address: 'Kawasan GOR H. Agus Salim, Rimbo Kaluang, Padang Barat',
+    id: 'pool-01-palapa',
+    name: 'Kolam Renang Palapa',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang umum dengan tarif terjangkau. Populer untuk kursus renang anak-anak dan rekreasi keluarga.',
+    address: 'Jl. Palapa Raya, Padang',
     district: 'Padang Barat',
-    ticketPrice: 15000,
-    rating: 4.2,
-    openingHours: '07:00 - 18:00 WIB',
-    latitude: -0.9254,
-    longitude: 100.3601,
-    facilities: ['Kolam Olimpiade', 'Kolam Anak', 'Tribun Penonton', 'Kamar Bilas', 'Loker', 'Kantin'],
-    imageDesc: 'public_olympic_pool'
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.0,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8141770,
+    longitude: 100.3198673,
+    facilities: ['Kolam Utama', 'Kolam Anak', 'Kamar Bilas', 'Kantin'],
   },
   {
-    id: 'pool-ganting',
-    name: 'Kolam Renang Wirabraja Ganting',
-    category: 'Umum',
-    description: 'Kolam renang milik TNI-AD yang dibuka untuk masyarakat umum. Area kolam renang terpelihara dengan sangat bersih dan airnya segar. Tersedia penyewaan ban renang untuk anak-anak.',
-    address: 'Jl. Ganting No.1, Ganting Parak Gadang, Padang Timur',
+    id: 'pool-02-gsports',
+    name: 'Swimming Pool G Sports',
+    kategori: 'Atlet',
+    jenisKolam: 'Indoor',
+    description: 'Kolam renang semi-indoor premium di pusat kebugaran G Sports Center. Perawatan air ketat dengan standar kolam atlet.',
+    address: 'G Sports Center, Gunung Pangilun, Padang Utara',
+    district: 'Padang Utara',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.6,
+    openingHours: '06:00 – 21:00 WIB',
+    latitude: -0.9112124,
+    longitude: 100.3636889,
+    facilities: ['Kolam Indoor 25m', 'Loker', 'Shower Air Panas', 'Cafe & Gym'],
+  },
+  {
+    id: 'pool-03-ibis',
+    name: 'Kolam Renang Hotel Ibis',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang modern Hotel Ibis Padang dengan pemandangan kota dan tiupan angin laut yang menyegarkan.',
+    address: 'Hotel Ibis Padang, Padang Utara',
+    district: 'Padang Utara',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.5,
+    openingHours: '06:00 – 19:00 WIB',
+    latitude: -0.9301768,
+    longitude: 100.3627643,
+    facilities: ['Outdoor Pool', 'Sunset View', 'Shower Air Hangat', 'Hotel Restoran'],
+  },
+  {
+    id: 'pool-04-araurestobar',
+    name: 'Arau Cafe And Resto',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang santai terintegrasi kafe dan restoran di kawasan bersejarah Muaro Padang. Digemari anak muda.',
+    address: 'Kawasan Muaro, Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.3,
+    openingHours: '09:00 – 21:00 WIB',
+    latitude: -0.9639552,
+    longitude: 100.3602165,
+    facilities: ['Poolside Cafe', 'Live Music', 'WiFi', 'Kamar Ganti'],
+  },
+  {
+    id: 'pool-05-uluaia',
+    name: 'Kolam Renang Uluaia',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang berlatar perbukitan Limau Manis dengan air sejuk alami mengalir dari pegunungan.',
+    address: 'Kawasan Limau Manis, Pauh',
+    district: 'Pauh',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.3,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -0.8000314,
+    longitude: 100.4152771,
+    facilities: ['Kolam Air Dingin', 'Seluncuran', 'Gazebo Bambu', 'Kantin'],
+  },
+  {
+    id: 'pool-06-bidanem',
+    name: 'Bidan Em',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang rumahan yang ramah bayi dan balita. Tersedia pendampingan khusus untuk anak belajar mengapung.',
+    address: 'Padang Timur',
     district: 'Padang Timur',
-    ticketPrice: 15000,
-    rating: 4.4,
-    openingHours: '08:00 - 17:30 WIB',
-    latitude: -0.9575,
-    longitude: 100.3705,
-    facilities: ['Kolam Dewasa', 'Kolam Anak', 'Sewa Ban & Kacamata', 'Kamar Mandi Bilas', 'Parkir Luas', 'Kantin'],
-    imageDesc: 'clean_military_pool'
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.2,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9236394,
+    longitude: 100.4589680,
+    facilities: ['Kolam Balita', 'Pendampingan', 'Shower Hangat'],
   },
   {
-    id: 'pool-mercure',
-    name: 'Infinity Pool Mercure Hotel Padang',
-    category: 'Hotel',
-    description: 'Kolam renang hotel bintang 4 dengan konsep infinity pool yang menghadap langsung ke Pantai Padang. Menawarkan kenyamanan eksklusif, suasana tenang, dan pemandangan matahari terbenam (sunset) yang spektakuler.',
-    address: 'Hotel Mercure Padang, Jl. Purus IV No.8, Purus, Padang Barat',
-    district: 'Padang Barat',
-    ticketPrice: 100000,
-    rating: 4.7,
-    openingHours: '06:00 - 20:00 WIB',
-    latitude: -0.9542,
-    longitude: 100.3526,
-    facilities: ['Infinity Pool', 'Sunset View', 'Shower Air Hangat', 'Handuk Bersih', 'Kursi Santai', 'Poolside Resto & Bar'],
-    imageDesc: 'premium_hotel_pool'
-  },
-  {
-    id: 'pool-chip',
-    name: 'CHIP Waterpark (Christine Hakim Idea Park)',
-    category: 'Waterpark',
-    description: 'Taman bermain air keluarga terintegrasi dengan pusat oleh-oleh Christine Hakim. Menyediakan berbagai wahana air seru mulai dari ember tumpah raksasa hingga seluncuran air melingkar.',
-    address: 'Jl. Adinegoro No.11A, Padang Sarai, Koto Tangah',
-    district: 'Koto Tangah',
-    ticketPrice: 40000,
-    rating: 4.3,
-    openingHours: '09:00 - 18:00 WIB',
-    latitude: -0.8124, // Adjusted to realistic northern Padang location
-    longitude: 100.3168,
-    facilities: ['Ember Tumpah', 'Water Slides', 'Kolam Arus', 'Gazebo Sewa', 'Food Court', 'Pusat Oleh-oleh'],
-    imageDesc: 'family_waterpark'
-  },
-  {
-    id: 'pool-unp',
-    name: 'Kolam Renang Universitas Negeri Padang',
-    category: 'Umum',
-    description: 'Kolam renang ukuran standar kompetisi nasional yang terletak di dalam kompleks Universitas Negeri Padang. Terutama digunakan untuk perkuliahan mahasiswa FIK UNP, namun dibuka untuk umum pada jam tertentu.',
-    address: 'Kampus UNP Air Tawar, Jl. Prof. Dr. Hamka, Air Tawar Barat, Padang Utara',
-    district: 'Padang Utara',
-    ticketPrice: 20000,
+    id: 'pool-07-familyceria',
+    name: 'Kolam Renang Family Ceria',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang keluarga yang ramah kantong, lengkap dengan permainan air untuk anak usia TK dan SD.',
+    address: 'Nanggalo, Padang',
+    district: 'Nanggalo',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
     rating: 4.1,
-    openingHours: '08:00 - 17:00 WIB',
-    latitude: -0.8972,
-    longitude: 100.3508,
-    facilities: ['Kolam Standar Olimpiade', 'Tribun', 'Kamar Bilas Standar', 'Parkir Kampus'],
-    imageDesc: 'academic_sports_pool'
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8772470,
+    longitude: 100.3650230,
+    facilities: ['Kolam Anak', 'Seluncuran', 'Gazebo', 'Kantin'],
   },
   {
-    id: 'pool-mariana',
-    name: 'Kolam Renang Mariana',
-    category: 'Umum',
-    description: 'Kolam renang keluarga legendaris di Padang Timur yang rimbun dan teduh. Memiliki tingkat keamanan yang baik untuk anak-anak dan kedalaman kolam dewasa yang bervariasi.',
-    address: 'Jl. Mariana No.22, Alai Parak Kopi, Padang Utara',
+    id: 'pool-08-tanahsirah',
+    name: 'Pemandian Tanah Sirah',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian air sungai alami yang jernih di Tanah Sirah, dikelilingi pepohonan rindang dan bebatuan kali.',
+    address: 'Tanah Sirah, Lubuk Begalung',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.2,
+    openingHours: '06:00 – 18:00 WIB',
+    latitude: -1.0041317,
+    longitude: 100.4182323,
+    facilities: ['Sungai Alami', 'Sewa Ban', 'Warung Tradisional'],
+  },
+  {
+    id: 'pool-09-alghij',
+    name: 'Pemandian Al-ghij Puncak Lalang',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian alam di lereng Lubuk Kilangan dengan air pegunungan sangat dingin dan menyegarkan.',
+    address: 'Puncak Lalang, Lubuk Kilangan',
+    district: 'Lubuk Kilangan',
+    ticketPrice: 'Anak: Rp 5.000 | Dewasa: Rp 10.000',
+    ticketPriceMin: 5000,
+    rating: 4.4,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.8825711,
+    longitude: 100.4361558,
+    facilities: ['Kolam Air Gunung', 'Bebatuan Alami', 'Warung Tradisional'],
+  },
+  {
+    id: 'pool-10-delima',
+    name: 'Kolam Renang Delima',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang semi-privat yang asri di kawasan Lubuk Begalung, cocok untuk keluarga yang ingin privasi lebih.',
+    address: 'Lubuk Begalung, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9851842,
+    longitude: 100.4019052,
+    facilities: ['Private Pool', 'Kamar Bilas', 'Area Istirahat'],
+  },
+  {
+    id: 'pool-11-andetiss',
+    name: 'Andetiss',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang populer di Pauh, banyak dikunjungi mahasiswa UNAND dan warga sekitar untuk olahraga sore.',
+    address: 'Limau Manis, Pauh',
+    district: 'Pauh',
+    ticketPrice: 'Rp 25.000',
+    ticketPriceMin: 25000,
+    rating: 4.2,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9249051,
+    longitude: 100.4382267,
+    facilities: ['Kolam Dewasa 1.6m', 'Kamar Bilas', 'Parkir Aman'],
+  },
+  {
+    id: 'pool-12-keluarga',
+    name: 'Kolam Pemandian Keluarga',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam pemandian keluarga berskala rumahan yang tenang dan nyaman, ideal untuk kunjungan privat rombongan kecil.',
+    address: 'Padang Utara',
     district: 'Padang Utara',
-    ticketPrice: 25000,
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8973993,
+    longitude: 100.4036004,
+    facilities: ['Private Pool', 'Gazebo', 'Dapur Bersama', 'Kamar Ganti'],
+  },
+  {
+    id: 'pool-13-faiq',
+    name: 'Faiq Swimming Pool',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang dengan instruktur bersertifikat, sangat cocok untuk program belajar renang anak-anak sekolah dasar.',
+    address: 'Koto Tangah',
+    district: 'Koto Tangah',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.2,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9115229,
+    longitude: 100.4803745,
+    facilities: ['Kolam Kursus', 'Instruktur Renang', 'Kamar Mandi Bersih', 'Ruang Tunggu'],
+  },
+  {
+    id: 'pool-14-arauminpark',
+    name: 'Arau Mini Park',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Taman bermain air mini di kawasan Padang Barat, lengkap dengan mandi busa pada akhir pekan.',
+    address: 'Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
     rating: 4.3,
-    openingHours: '08:00 - 18:00 WIB',
-    latitude: -0.9328,
-    longitude: 100.3752,
-    facilities: ['Kolam Dewasa Teduh', 'Kolam Anak dengan Slide', 'Kamar Mandi Bilas', 'Gazebo Istirahat', 'Kantin'],
-    imageDesc: 'shaded_family_pool'
-  }
+    openingHours: '09:00 – 18:00 WIB',
+    latitude: -0.9637494,
+    longitude: 100.3604504,
+    facilities: ['Mandi Busa (Weekend)', 'Mini Slide', 'Taman Bermain', 'Kantin'],
+  },
+  {
+    id: 'pool-15-imelda',
+    name: 'Kolam Renang Imelda',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang resort di Limau Manis yang dikelilingi perbukitan hijau. Udara sejuk dan suasana resort yang eksklusif.',
+    address: 'Limau Manis, Pauh',
+    district: 'Pauh',
+    ticketPrice: 'Rp 35.000',
+    ticketPriceMin: 35000,
+    rating: 4.5,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.9399444,
+    longitude: 100.4654344,
+    facilities: ['Resort Pool', 'Kids Playground', 'Shower Air Hangat', 'Restoran'],
+  },
+  {
+    id: 'pool-16-jahayunajalu',
+    name: 'Kolam Renang Jahayu Najalu',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang asri di tenggara Padang dengan pohon kelapa yang meneduhkan di sekeliling area kolam.',
+    address: 'Lubuk Begalung, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.3,
+    openingHours: '08:30 – 17:30 WIB',
+    latitude: -1.0043289,
+    longitude: 100.4182954,
+    facilities: ['Kolam Bermain', 'Kamar Bilas', 'Penyewaan Ban', 'Kantin'],
+  },
+  {
+    id: 'pool-17-singkarak',
+    name: 'Singkarak Swimming Pool',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang umum di Padang Selatan yang ramah anak dengan kolam latihan kedalaman bervariasi.',
+    address: 'Padang Selatan',
+    district: 'Padang Selatan',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.0,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9467053,
+    longitude: 100.3592860,
+    facilities: ['Kolam Latihan', 'Kolam Anak', 'Kamar Ganti', 'Warung Kopi'],
+  },
+  {
+    id: 'pool-18-pakbadoel',
+    name: 'Kolam Pemandian Pak Badoel',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian lokal Lubuk Begalung dengan aliran air alami yang dijaga keasriannya oleh warga setempat.',
+    address: 'Lubuk Begalung, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '07:30 – 18:00 WIB',
+    latitude: -0.9891402,
+    longitude: 100.4044301,
+    facilities: ['Bathing Spring', 'Kamar Mandi Sederhana', 'Warung'],
+  },
+  {
+    id: 'pool-19-fuzzion',
+    name: 'Fuzzion Pool Centre',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Fasilitas kolam renang modern dengan lounge kafe terintegrasi di Padang Selatan. Standar filter air tinggi.',
+    address: 'Padang Selatan',
+    district: 'Padang Selatan',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.4,
+    openingHours: '08:00 – 21:00 WIB',
+    latitude: -0.9485900,
+    longitude: 100.3550100,
+    facilities: ['Filter Air Canggih', 'Lounge Kafe', 'Outdoor Seats', 'Loker'],
+  },
+  {
+    id: 'pool-20-wirabraja',
+    name: 'Kolam Renang Wirabraja',
+    kategori: 'Atlet',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang milik TNI-AD yang terbuka untuk umum. Terkenal bersih, tertib, dan ideal untuk latihan atlet renang.',
+    address: 'Ganting, Padang Timur',
+    district: 'Padang Timur',
+    ticketPrice: 'Senin–Jumat: Rp 15.000 | Sabtu–Minggu: Rp 18.000',
+    ticketPriceMin: 15000,
+    rating: 4.4,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -0.9510104,
+    longitude: 100.3699086,
+    facilities: ['Kolam Dewasa 50m', 'Kolam Anak', 'Kamar Bilas', 'Kantin', 'Parkir Luas'],
+  },
+  {
+    id: 'pool-21-silo',
+    name: 'Kolam Renang Silo',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang warga di Koto Tangah dengan air sumur pegunungan yang jernih dan sejuk.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Rp 5.000',
+    ticketPriceMin: 5000,
+    rating: 3.9,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -0.9602260,
+    longitude: 100.4760862,
+    facilities: ['Kolam Kedalaman Bervariasi', 'Warung', 'Kamar Bilas'],
+  },
+  {
+    id: 'pool-22-pandanwangi',
+    name: 'Kolam Renang Pawang (Pandan Wangi)',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang anak-anak dengan ornamen patung lumba-lumba dan pancuran air yang menjadi ikon kawasan.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Rp 10.000',
+    ticketPriceMin: 10000,
+    rating: 4.0,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9492341,
+    longitude: 100.4572269,
+    facilities: ['Pancuran Patung', 'Kolam Dangkal', 'Sewa Ban', 'Kantin'],
+  },
+  {
+    id: 'pool-23-lubuakkudo',
+    name: 'Lubuak Kudo',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian lubuk sungai alam dengan spot lompat dari bebatuan tebing. Airnya sangat jernih dan dalam.',
+    address: 'Kuranji, Padang',
+    district: 'Kuranji',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.6,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.8645917,
+    longitude: 100.4292333,
+    facilities: ['Spot Lompat Tebing', 'Air Jernih Alami', 'Warung Kopi'],
+  },
+  {
+    id: 'pool-24-alinafiqaz',
+    name: 'Kolam Renang Alinafiqaz',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang hemat di Koto Tangah, favorit warga sekitar dan pelajar untuk rekreasi sore hari.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8989400,
+    longitude: 100.4095898,
+    facilities: ['Kolam Latihan', 'Gazebo Sewa', 'Toko Perlengkapan Renang'],
+  },
+  {
+    id: 'pool-25-jahayunajalu2',
+    name: 'Pemandian Jahayu Najalu',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian pancuran bambu alami di Lubuk Begalung dengan nuansa relaksasi pijat air yang menenangkan.',
+    address: 'Lubuk Begalung, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.2,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -1.0042783,
+    longitude: 100.4182972,
+    facilities: ['Pancuran Bambu', 'Terapi Air', 'Gazebo', 'Kantin'],
+  },
+  {
+    id: 'pool-26-kasang',
+    name: 'Kolam Renang Alami Nagari Kasang',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian irigasi persawahan berlantai pasir kerikil sungai alami di batas Kota Padang–Pariaman.',
+    address: 'Kasang, Koto Tangah',
+    district: 'Koto Tangah',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.3,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.7861043,
+    longitude: 100.3505701,
+    facilities: ['Pasir Kerikil Alami', 'Aliran Sungai Segar', 'Kantin Ikan Bakar'],
+  },
+  {
+    id: 'pool-27-pangeranbeach',
+    name: 'Pangeran Beach Hotel',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang outdoor premium hotel legendaris Pangeran Beach Padang, tepat di samping Pantai Samudra Hindia.',
+    address: 'Jl. Ir. H. Juanda, Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.6,
+    openingHours: '06:00 – 20:00 WIB',
+    latitude: -0.9238422,
+    longitude: 100.3499734,
+    facilities: ['Sea Breeze Pool', 'Poolside Lounge', 'Shower', 'Fitness Center'],
+  },
+  {
+    id: 'pool-28-adzkia',
+    name: 'Kolam Renang Adzkia',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang di kompleks pendidikan Adzkia Kuranji, dibuka untuk umum secara berkala di luar jam sekolah.',
+    address: 'Kuranji, Padang',
+    district: 'Kuranji',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.0,
+    openingHours: '08:00 – 17:00 WIB',
+    latitude: -0.9196274,
+    longitude: 100.3933428,
+    facilities: ['Kolam Latihan', 'Kamar Bilas Standar', 'Parkir'],
+  },
+  {
+    id: 'pool-29-radisa',
+    name: 'Radisa Swimming Pool & Cafe',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Perpaduan kolam renang santai dan kafe estetik di Padang Utara. Sangat cocok untuk keluarga muda yang aktif.',
+    address: 'Padang Utara',
+    district: 'Padang Utara',
+    ticketPrice: 'Selasa–Jumat: Rp 10.000 | Sabtu–Minggu: Rp 14.000',
+    ticketPriceMin: 10000,
+    rating: 4.3,
+    openingHours: '09:00 – 20:00 WIB',
+    latitude: -0.9253497,
+    longitude: 100.3728503,
+    facilities: ['Outdoor Cafe', 'Menu Makanan', 'WiFi', 'Shower'],
+  },
+  {
+    id: 'pool-30-grandsari',
+    name: 'Fun Pool Grand Sari Hotel',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang hotel di pusat Kota Padang dengan suasana tenang dan rindang sangat cocok untuk bersantai.',
+    address: 'Jl. Jend. Sudirman, Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Rp 40.000 – Rp 55.000',
+    ticketPriceMin: 40000,
+    rating: 4.2,
+    openingHours: '07:00 – 19:00 WIB',
+    latitude: -0.9549312,
+    longitude: 100.3678885,
+    facilities: ['Poolside Lounge', 'Hotel Resto', 'Shower', 'Handuk'],
+  },
+  {
+    id: 'pool-31-abg',
+    name: 'Kolam Renang ABG',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Destinasi wisata air alam di perbukitan Koto Tangah. Air kolam berasal dari mata air pegunungan alami yang dingin.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Rp 25.000',
+    ticketPriceMin: 25000,
+    rating: 4.5,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -0.8271774,
+    longitude: 100.3962117,
+    facilities: ['Air Mata Air Alami', 'Slide Anak', 'Gazebo', 'Kantin Tradisional'],
+  },
+  {
+    id: 'pool-32-wiratirta',
+    name: 'Kolam Renang Wira Tirta Pagambiran',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang di kawasan Pagambiran, ramai dikunjungi anak-anak sekitar di sore hari.',
+    address: 'Pagambiran, Lubuk Begalung',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 3.9,
+    openingHours: '08:00 – 17:30 WIB',
+    latitude: -0.9804416,
+    longitude: 100.4084712,
+    facilities: ['Kolam Bermain', 'Kamar Ganti', 'Warung Ringan'],
+  },
+  {
+    id: 'pool-33-hayyantirta',
+    name: 'Kolam Renang Muslim Muslimah Indoor Hayyan Tirta',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Indoor',
+    description: 'Kolam renang syariah berkonsep indoor dengan pemisahan waktu dan area khusus pria dan wanita, menjamin privasi.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Weekday Dewasa: Rp 20.000, Anak: Rp 15.000 | Weekend Dewasa: Rp 25.000, Anak: Rp 20.000',
+    ticketPriceMin: 15000,
+    rating: 4.4,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8542717,
+    longitude: 100.3648013,
+    facilities: ['Kolam Syariah Indoor', 'Area Privat Pria & Wanita', 'Kamar Ganti', 'Kantin Halal'],
+  },
+  {
+    id: 'pool-34-amerta',
+    name: 'Amerta Swimming Pool',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Indoor',
+    description: 'Kolam renang indoor di Padang Selatan, bebas dari sengatan matahari dengan air yang terjaga kebersihannya sepanjang hari.',
+    address: 'Padang Selatan',
+    district: 'Padang Selatan',
+    ticketPrice: 'Weekday Dewasa: Rp 50.000, Anak: Rp 30.000 | Weekend Dewasa: Rp 60.000, Anak: Rp 35.000',
+    ticketPriceMin: 30000,
+    rating: 4.3,
+    openingHours: '08:00 – 19:00 WIB',
+    latitude: -0.9585801,
+    longitude: 100.3549528,
+    facilities: ['Indoor Pool Bersih', 'Shower & Bilas Sabun', 'WiFi', 'AC'],
+  },
+  {
+    id: 'pool-35-teratai',
+    name: 'Kolam Renang Teratai',
+    kategori: 'Atlet',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang standar olimpiade milik Pemerintah Kota Padang di GOR H. Agus Salim. Tempat latihan atlet renang daerah.',
+    address: 'GOR H. Agus Salim, Rimbo Kaluang, Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Senin–Jumat: Rp 10.000 | Sabtu–Minggu: Rp 12.000',
+    ticketPriceMin: 10000,
+    rating: 4.2,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.9305979,
+    longitude: 100.3597607,
+    facilities: ['Kolam Olimpiade 50m', 'Kolam Anak', 'Tribun', 'Kamar Bilas', 'Kantin'],
+  },
+  {
+    id: 'pool-36-unp',
+    name: 'Grand Swimming Pool Indoor UNP',
+    kategori: 'Atlet',
+    jenisKolam: 'Indoor',
+    description: 'Fasilitas kolam renang indoor bertaraf olimpiade nasional milik Universitas Negeri Padang. Higienis dan berstandar tinggi.',
+    address: 'Kampus UNP Air Tawar, Padang Utara',
+    district: 'Padang Utara',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.6,
+    openingHours: '08:00 – 17:00 WIB',
+    latitude: -0.8987186,
+    longitude: 100.3476573,
+    facilities: ['Kolam Indoor 50m', 'Tribun Penonton', 'Kamar Bilas Modern', 'Ruang Ganti'],
+  },
+  {
+    id: 'pool-37-puncaklalang',
+    name: 'Kolam Renang Puncak Lalang',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam pemandian buatan berair sejuk di kawasan perkebunan kelapa perbukitan Koto Tangah.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.8825606,
+    longitude: 100.4361523,
+    facilities: ['Kolam Keluarga', 'Gazebo Kayu', 'Kebun Kelapa'],
+  },
+  {
+    id: 'pool-38-lumbalumba',
+    name: 'Kolam Renang Lumba Lumba',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang di Lubuk Begalung yang melayani program terapi air untuk lansia dan pasca-stroke.',
+    address: 'Lubuk Begalung, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.2,
+    openingHours: '06:00 – 18:00 WIB',
+    latitude: -0.9689576,
+    longitude: 100.4021344,
+    facilities: ['Kolam Terapi Hangat', 'Shower Difabel', 'Loker'],
+  },
+  {
+    id: 'pool-39-wanaraja',
+    name: 'Wanaraja Pool & Spa',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Indoor',
+    description: 'Kombinasi kolam renang dan pusat spa tradisional Minang di kawasan Padang Barat. Sangat cocok untuk relaksasi total.',
+    address: 'Padang Barat',
+    district: 'Padang Barat',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.5,
+    openingHours: '08:00 – 20:00 WIB',
+    latitude: -0.9158863,
+    longitude: 100.3552445,
+    facilities: ['Spa Room', 'Swimming Pool', 'Pijat Tradisional', 'Shower Hangat'],
+  },
+  {
+    id: 'pool-40-raisyah',
+    name: 'Kolam Renang Raisyah',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Indoor',
+    description: 'Kolam renang semi-privat bernuansa kebun asri di Nanggalo, ideal untuk acara keluarga atau arisan.',
+    address: 'Nanggalo, Padang',
+    district: 'Nanggalo',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '08:30 – 18:00 WIB',
+    latitude: -0.8780546,
+    longitude: 100.3803217,
+    facilities: ['Garden Pool', 'Kolam Teduh', 'BBQ Area', 'Kamar Ganti'],
+  },
+  {
+    id: 'pool-41-campusbri',
+    name: 'Kolam Renang Campus BRI',
+    kategori: 'Atlet',
+    jenisKolam: 'Indoor',
+    description: 'Kolam renang di kompleks Diklat BRI Padang. Pengawasan ketat dan kebersihan air sangat tinggi sesuai standar pelatihan.',
+    address: 'Jl. Lapai, Padang Utara',
+    district: 'Padang Utara',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.4,
+    openingHours: '07:00 – 17:30 WIB',
+    latitude: -0.9281563,
+    longitude: 100.4311390,
+    facilities: ['Kolam Olahraga', 'Lifeguard', 'Shower Bilas', 'Loker'],
+  },
+  {
+    id: 'pool-42-tepshung',
+    name: 'Kolam Renang Tep Shung',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang legendaris dikelola warga keturunan Tionghoa Padang di dekat kawasan Pecinan bersejarah.',
+    address: 'Koto Tangah, Padang',
+    district: 'Koto Tangah',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.0,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9600015,
+    longitude: 100.4190399,
+    facilities: ['Kolam Latihan', 'Kamar Bilas', 'Warung Tradisional'],
+  },
+  {
+    id: 'pool-43-mataair',
+    name: 'Kolam Renang Mata Air',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Pemandian kolam semen tua berair jernih di kawasan Bukit Mata Air Padang Selatan.',
+    address: 'Padang Selatan',
+    district: 'Padang Selatan',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.1,
+    openingHours: '07:00 – 18:00 WIB',
+    latitude: -0.9730867,
+    longitude: 100.3844782,
+    facilities: ['Kolam Air Alami', 'Kamar Ganti', 'Warung Rujak'],
+  },
+  {
+    id: 'pool-44-arauwaterpark',
+    name: 'ARAU WATER PARK',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Taman rekreasi air keluarga terbesar di tepian Sungai Batang Arau. Lengkap dengan seluncuran dan area bermain air anak.',
+    address: 'Pemancungan, Padang Selatan',
+    district: 'Padang Selatan',
+    ticketPrice: 'Rp 35.000',
+    ticketPriceMin: 35000,
+    rating: 4.4,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9573186,
+    longitude: 100.3595772,
+    facilities: ['Seluncuran Spiral', 'Ember Tumpah', 'Kolam Arus', 'Gazebo', 'Panggung Hiburan'],
+  },
+  {
+    id: 'pool-45-akhelva',
+    name: 'AKHELVA HOUSE WaterPark Dan Wisata Alam',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Destinasi wisata keluarga dengan kolam renang dikombinasikan taman asri, kolam ikan, dan wisata alam.',
+    address: 'Lubuk Begalung / Koto Tangah, Padang',
+    district: 'Lubuk Begalung',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.4,
+    openingHours: '08:00 – 18:00 WIB',
+    latitude: -0.9367820,
+    longitude: 100.4736823,
+    facilities: ['Water Playground', 'Taman Bunga', 'Gazebo Teduh', 'Kolam Ikan', 'Kantin'],
+  },
+  {
+    id: 'pool-46-faharfiq',
+    name: 'Kolam Renang Faharfiq Zwembad',
+    kategori: 'Rekreasi',
+    jenisKolam: 'Outdoor',
+    description: 'Kolam renang bernuansa klasik Eropa di Padang. Dilengkapi sistem pemanas air dan fasilitas kamar mandi yang bersih.',
+    address: 'Padang, Sumatera Barat',
+    district: 'Padang',
+    ticketPrice: 'Hubungi lokasi',
+    ticketPriceMin: 0,
+    rating: 4.4,
+    openingHours: '06:00 – 19:00 WIB',
+    latitude: -0.9392783,
+    longitude: 100.4682755,
+    facilities: ['Pemanas Air', 'Kamar Mandi Eropa', 'Ruang Santai', 'WiFi'],
+  },
 ];
 
 export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
+  const [selectedKategori, setSelectedKategori] = useState<string>('Semua');
+  const [selectedJenis, setSelectedJenis] = useState<string>('Semua');
   const [filteredPools, setFilteredPools] = useState<SwimmingPool[]>(POOLS_DATA);
   const [selectedPool, setSelectedPool] = useState<SwimmingPool | null>(null);
-  
-  // Spatial Analysis states
+
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [nearestPool, setNearestPool] = useState<SwimmingPool | null>(null);
   const [nearestDistance, setNearestDistance] = useState<number | null>(null);
   const [nearestRouteGeoJson, setNearestRouteGeoJson] = useState<any>(null);
 
-  // Map state
   const [mapCenter, setMapCenter] = useState<[number, number]>(PADANG_CENTER);
   const [mapZoom, setMapZoom] = useState<number>(12);
   const [activeTab, setActiveTab] = useState<'directory' | 'nearest' | 'detail'>('directory');
 
-  // Trigger filtering when query or category changes
   useEffect(() => {
     let result = POOLS_DATA;
 
-    // Filter by Category
-    if (selectedCategory !== 'Semua') {
-      result = result.filter(pool => pool.category === selectedCategory);
+    if (selectedKategori !== 'Semua') {
+      result = result.filter(p => p.kategori === selectedKategori);
     }
-
-    // Filter by Search Query
+    if (selectedJenis !== 'Semua') {
+      result = result.filter(p => p.jenisKolam === selectedJenis);
+    }
     if (searchQuery.trim() !== '') {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(
-        pool =>
-          pool.name.toLowerCase().includes(query) ||
-          pool.address.toLowerCase().includes(query) ||
-          pool.district.toLowerCase().includes(query) ||
-          pool.facilities.some(fac => fac.toLowerCase().includes(query))
+        p =>
+          p.name.toLowerCase().includes(q) ||
+          p.address.toLowerCase().includes(q) ||
+          p.district.toLowerCase().includes(q) ||
+          p.facilities.some(f => f.toLowerCase().includes(q))
       );
     }
 
     setFilteredPools(result);
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedKategori, selectedJenis]);
 
-  // Handle pool select: Fly map to location
   const handleSelectPool = (pool: SwimmingPool | null) => {
     setSelectedPool(pool);
     if (pool) {
@@ -191,39 +840,22 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Find nearest pool using Turf.js
   const findNearestPool = (lat: number, lng: number) => {
     setUserLocation([lat, lng]);
-
-    let closestPool: SwimmingPool | null = null;
-    let minDistance: number = Infinity;
-
     const clickedPoint = turf.point([lng, lat]);
+    let closestPool: SwimmingPool | null = null;
+    let minDistance = Infinity;
 
     POOLS_DATA.forEach(pool => {
-      const poolPoint = turf.point([pool.longitude, pool.latitude]);
-      const dist = turf.distance(clickedPoint, poolPoint, { units: 'kilometers' });
-
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestPool = pool;
-      }
+      const dist = turf.distance(clickedPoint, turf.point([pool.longitude, pool.latitude]), { units: 'kilometers' });
+      if (dist < minDistance) { minDistance = dist; closestPool = pool; }
     });
 
     if (closestPool) {
       setNearestPool(closestPool);
       setNearestDistance(parseFloat(minDistance.toFixed(2)));
-
-      // Create Route LineString GeoJSON
-      const route = turf.lineString([
-        [lng, lat],
-        [(closestPool as SwimmingPool).longitude, (closestPool as SwimmingPool).latitude]
-      ]);
-
-      setNearestRouteGeoJson(route);
+      setNearestRouteGeoJson(turf.lineString([[lng, lat], [(closestPool as SwimmingPool).longitude, (closestPool as SwimmingPool).latitude]]));
       setActiveTab('nearest');
-      
-      // Calculate map bounds to fit both points
       const avgLat = (lat + (closestPool as SwimmingPool).latitude) / 2;
       const avgLng = (lng + (closestPool as SwimmingPool).longitude) / 2;
       setMapCenter([avgLat, avgLng]);
@@ -232,48 +864,27 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const clearNearestAnalysis = () => {
-    setUserLocation(null);
-    setNearestPool(null);
-    setNearestDistance(null);
-    setNearestRouteGeoJson(null);
-    setActiveTab('directory');
+    setUserLocation(null); setNearestPool(null); setNearestDistance(null);
+    setNearestRouteGeoJson(null); setActiveTab('directory');
   };
 
   return (
-    <SpatialContext.Provider
-      value={{
-        pools: POOLS_DATA,
-        filteredPools,
-        searchQuery,
-        setSearchQuery,
-        selectedCategory,
-        setSelectedCategory,
-        selectedPool,
-        setSelectedPool: handleSelectPool,
-        userLocation,
-        setUserLocation,
-        nearestPool,
-        nearestDistance,
-        nearestRouteGeoJson,
-        findNearestPool,
-        clearNearestAnalysis,
-        mapCenter,
-        setMapCenter,
-        mapZoom,
-        setMapZoom,
-        activeTab,
-        setActiveTab
-      }}
-    >
+    <SpatialContext.Provider value={{
+      pools: POOLS_DATA, filteredPools, searchQuery, setSearchQuery,
+      selectedKategori, setSelectedKategori, selectedJenis, setSelectedJenis,
+      selectedPool, setSelectedPool: handleSelectPool,
+      userLocation, setUserLocation,
+      nearestPool, nearestDistance, nearestRouteGeoJson,
+      findNearestPool, clearNearestAnalysis,
+      mapCenter, setMapCenter, mapZoom, setMapZoom, activeTab, setActiveTab
+    }}>
       {children}
     </SpatialContext.Provider>
   );
 };
 
 export const useSpatial = () => {
-  const context = useContext(SpatialContext);
-  if (context === undefined) {
-    throw new Error('useSpatial must be used within a SpatialProvider');
-  }
-  return context;
+  const ctx = useContext(SpatialContext);
+  if (!ctx) throw new Error('useSpatial must be used within a SpatialProvider');
+  return ctx;
 };

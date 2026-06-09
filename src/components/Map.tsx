@@ -12,10 +12,11 @@ L.Icon.Default.mergeOptions({
 });
 
 // Custom swimming pool SVG pin icon generator
+// Atlet = purple, Indoor Rekreasi = teal, Outdoor Rekreasi = cyan
 const getPoolPinIcon = (pool: SwimmingPool, isSelected: boolean) => {
-  let color = '#0891b2'; // Cyan (Umum)
-  if (pool.category === 'Hotel') color = '#0f766e'; // Teal (Hotel)
-  if (pool.category === 'Waterpark') color = '#0284c7'; // Sky Blue (Waterpark)
+  let color = '#0891b2'; // default cyan (Rekreasi Outdoor)
+  if (pool.kategori === 'Atlet') color = '#7c3aed'; // purple for athlete pools
+  else if (pool.jenisKolam === 'Indoor') color = '#0e7490'; // deep teal for indoor
 
   if (isSelected) {
     color = '#db2777'; // Highlight selected pool with pink
@@ -145,15 +146,34 @@ export const Map: React.FC = () => {
             >
               <Popup closeButton={false}>
                 <div style={{ padding: '0px', width: '220px' }}>
-                  {/* Decorative card top */}
+                  {/* Decorative card top bar colored by kategori */}
                   <div style={{
-                    height: '6px',
-                    backgroundColor: pool.category === 'Hotel' ? '#0f766e' : pool.category === 'Waterpark' ? '#0284c7' : '#0891b2'
+                    height: '5px',
+                    background: pool.kategori === 'Atlet'
+                      ? 'linear-gradient(90deg,#7c3aed,#6d28d9)'
+                      : pool.jenisKolam === 'Indoor'
+                        ? 'linear-gradient(90deg,#0e7490,#0891b2)'
+                        : 'linear-gradient(90deg,#0891b2,#06b6d4)'
                   }} />
                   <div style={{ padding: '12px' }}>
-                    <span className="badge badge-pool-type" style={{ fontSize: '0.6rem', padding: '2px 8px', marginBottom: '6px' }}>
-                      {pool.category}
-                    </span>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                      <span style={{
+                        fontSize: '0.58rem', padding: '2px 7px', borderRadius: '9999px', fontWeight: 700,
+                        background: pool.kategori === 'Atlet' ? '#f5f3ff' : 'var(--bg-accent-light)',
+                        color: pool.kategori === 'Atlet' ? '#6d28d9' : 'var(--accent-primary)',
+                        border: `1px solid ${pool.kategori === 'Atlet' ? '#ddd6fe' : 'rgba(8,145,178,0.2)'}`,
+                      }}>
+                        {pool.kategori}
+                      </span>
+                      <span style={{
+                        fontSize: '0.58rem', padding: '2px 7px', borderRadius: '9999px', fontWeight: 700,
+                        background: pool.jenisKolam === 'Indoor' ? '#fef3c7' : '#ecfdf5',
+                        color: pool.jenisKolam === 'Indoor' ? '#92400e' : '#065f46',
+                        border: `1px solid ${pool.jenisKolam === 'Indoor' ? '#fde68a' : '#a7f3d0'}`,
+                      }}>
+                        {pool.jenisKolam}
+                      </span>
+                    </div>
                     <h4 style={{ margin: '2px 0 6px 0', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
                       {pool.name}
                     </h4>
@@ -161,8 +181,8 @@ export const Map: React.FC = () => {
                       📍 {pool.district}
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
-                        {pool.ticketPrice === 0 ? 'Gratis' : `Rp ${pool.ticketPrice.toLocaleString('id-ID')}`}
+                      <span style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                        {pool.ticketPriceMin > 0 ? `Rp ${pool.ticketPriceMin.toLocaleString('id-ID')}+` : '—'}
                       </span>
                       <span className="badge badge-rating" style={{ margin: 0, padding: '2px 6px' }}>
                         ⭐ {pool.rating}
