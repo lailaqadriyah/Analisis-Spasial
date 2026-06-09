@@ -1,0 +1,228 @@
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import { useSpatial, type SwimmingPool } from '../context/SpatialContext';
+
+// Clean Leaflet marker override setup
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// Custom swimming pool SVG pin icon generator
+const getPoolPinIcon = (pool: SwimmingPool, isSelected: boolean) => {
+  let color = '#0891b2'; // Cyan (Umum)
+  if (pool.category === 'Hotel') color = '#0f766e'; // Teal (Hotel)
+  if (pool.category === 'Waterpark') color = '#0284c7'; // Sky Blue (Waterpark)
+
+  if (isSelected) {
+    color = '#db2777'; // Highlight selected pool with pink
+  }
+
+  const pulseStyle = isSelected ? `
+    <div style="position: absolute; top: -6px; left: -6px; width: 44px; height: 48px; border-radius: 50%; background-color: rgba(219, 39, 119, 0.15); animation: pulse 1.8s infinite; z-index: -1;"></div>
+    <style>
+      @keyframes pulse {
+        0% { transform: scale(0.8); opacity: 1; }
+        100% { transform: scale(1.3); opacity: 0; }
+      }
+    </style>
+  ` : '';
+
+  return L.divIcon({
+    html: `
+      <div style="position: relative; width: 32px; height: 36px;">
+        ${pulseStyle}
+        <svg width="32" height="36" viewBox="0 0 32 36" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.16));">
+          <!-- Main Pin body -->
+          <path d="M16 0C7.16 0 0 7.16 0 16C0 25.68 16 36 16 36C16 36 32 25.68 32 16C32 7.16 24.84 0 16 0Z" fill="${color}"/>
+          <!-- White circle insert -->
+          <circle cx="16" cy="15" r="7" fill="white"/>
+          <!-- Wave graphic in pool color -->
+          <path d="M12 14c0.8 0.6 1.4 0 2.2 0.3c0.8 0.3 1.2-0.3 2-0.1c0.8 0.2 1.4 0.6 2 0.1" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M12 17c0.8 0.6 1.4 0 2.2 0.3c0.8 0.3 1.2-0.3 2-0.1c0.8 0.2 1.4 0.6 2 0.1" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `,
+    className: 'custom-pool-pin',
+    iconSize: [32, 36],
+    iconAnchor: [16, 36],
+    popupAnchor: [0, -32],
+  });
+};
+
+// SVG Icon for user clicked query center
+const queryCrosshairIcon = L.divIcon({
+  html: `
+    <div style="position: relative; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background-color: rgba(239, 68, 68, 0.15); border: 2.5px dashed #ef4444; animation: rotateDashed 12s infinite linear;"></div>
+      <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; border: 2.5px solid #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.25);"></div>
+    </div>
+    <style>
+      @keyframes rotateDashed {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  `,
+  className: 'custom-query-crosshair',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
+
+// Map Viewport center controller
+const MapController: React.FC = () => {
+  const { mapCenter, mapZoom } = useSpatial();
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(mapCenter, mapZoom, { animate: true, duration: 1.0 });
+  }, [mapCenter, mapZoom, map]);
+
+  return null;
+};
+
+// Map click event observer for finding nearest pool
+const MapEventsHandler: React.FC = () => {
+  const { activeTab, findNearestPool } = useSpatial();
+
+  useMapEvents({
+    click(e) {
+      if (activeTab === 'nearest') {
+        findNearestPool(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+
+  return null;
+};
+
+export const Map: React.FC = () => {
+  const {
+    filteredPools,
+    selectedPool,
+    setSelectedPool,
+    userLocation,
+    nearestRouteGeoJson,
+    activeTab
+  } = useSpatial();
+
+  // Custom pool popup layout
+  const handleMarkerClick = (pool: SwimmingPool) => {
+    setSelectedPool(pool);
+  };
+
+  return (
+    <div className="map-viewport">
+      <MapContainer
+        center={[-0.9471, 100.4172]}
+        zoom={12}
+        zoomControl={false}
+        scrollWheelZoom={true}
+      >
+        {/* We use CartoDB Positron Light tiles as default for a clean, non-AI corporate/consumer aesthetic */}
+        <TileLayer
+          attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        />
+
+        <MapController />
+        <MapEventsHandler />
+
+        {/* Swimming Pools Markers */}
+        {filteredPools.map((pool) => {
+          const isSelected = selectedPool?.id === pool.id;
+          return (
+            <Marker
+              key={pool.id}
+              position={[pool.latitude, pool.longitude]}
+              icon={getPoolPinIcon(pool, isSelected)}
+              eventHandlers={{
+                click: () => handleMarkerClick(pool),
+              }}
+            >
+              <Popup closeButton={false}>
+                <div style={{ padding: '0px', width: '220px' }}>
+                  {/* Decorative card top */}
+                  <div style={{
+                    height: '6px',
+                    backgroundColor: pool.category === 'Hotel' ? '#0f766e' : pool.category === 'Waterpark' ? '#0284c7' : '#0891b2'
+                  }} />
+                  <div style={{ padding: '12px' }}>
+                    <span className="badge badge-pool-type" style={{ fontSize: '0.6rem', padding: '2px 8px', marginBottom: '6px' }}>
+                      {pool.category}
+                    </span>
+                    <h4 style={{ margin: '2px 0 6px 0', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                      {pool.name}
+                    </h4>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      📍 {pool.district}
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                        {pool.ticketPrice === 0 ? 'Gratis' : `Rp ${pool.ticketPrice.toLocaleString('id-ID')}`}
+                      </span>
+                      <span className="badge badge-rating" style={{ margin: 0, padding: '2px 6px' }}>
+                        ⭐ {pool.rating}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* User Search Query Location */}
+        {userLocation && (
+          <Marker position={userLocation} icon={queryCrosshairIcon} />
+        )}
+
+        {/* Nearest Pool routing line */}
+        {nearestRouteGeoJson && (
+          <GeoJSON
+            key={JSON.stringify(nearestRouteGeoJson)}
+            data={nearestRouteGeoJson}
+            style={() => ({
+              color: '#0891b2',
+              weight: 3.5,
+              opacity: 0.85,
+              dashArray: '8, 8',
+              lineCap: 'round',
+            })}
+          />
+        )}
+      </MapContainer>
+
+      {/* Floating search status info box */}
+      {activeTab === 'nearest' && (
+        <div
+          className="animate-fade-in"
+          style={{
+            position: 'absolute',
+            top: '24px',
+            left: '24px',
+            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+            color: 'white',
+            backdropFilter: 'blur(8px)',
+            padding: '10px 18px',
+            borderRadius: '20px',
+            fontSize: '0.775rem',
+            fontWeight: 600,
+            zIndex: 1000,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: 'var(--shadow-lg)',
+          }}
+        >
+          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444', animation: 'ping 1s infinite' }}></div>
+          Mode Cari Terdekat Aktif
+        </div>
+      )}
+    </div>
+  );
+};
