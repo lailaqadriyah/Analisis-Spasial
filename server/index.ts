@@ -81,6 +81,11 @@ async function initDb() {
 
 // REST Routes
 
+// Home route
+app.get('/', (req, res) => {
+  res.send('Spatial Analysis API Backend is running! Access the frontend at http://localhost:5173');
+});
+
 // GET all pools
 app.get('/api/pools', async (req, res) => {
   try {
