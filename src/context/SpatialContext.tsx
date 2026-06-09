@@ -16,6 +16,8 @@ export interface SwimmingPool {
   latitude: number;
   longitude: number;
   facilities: string[];
+  status?: 'Buka' | 'Tutup' | 'Renovasi';
+  imageUrl?: string;
 }
 
 interface SpatialContextType {
@@ -42,6 +44,15 @@ interface SpatialContextType {
   setMapZoom: (zoom: number) => void;
   activeTab: 'directory' | 'nearest' | 'detail';
   setActiveTab: (tab: 'directory' | 'nearest' | 'detail') => void;
+  
+  // CRUD
+  addPool: (pool: Omit<SwimmingPool, 'id'>) => void;
+  updatePool: (id: string, updated: Partial<SwimmingPool>) => void;
+  deletePool: (id: string) => void;
+  isSelectingLocation: boolean;
+  setIsSelectingLocation: (val: boolean) => void;
+  formCoords: [number, number] | null;
+  setFormCoords: (coords: [number, number] | null) => void;
 }
 
 const SpatialContext = createContext<SpatialContextType | undefined>(undefined);
@@ -793,10 +804,15 @@ const POOLS_DATA: SwimmingPool[] = [
 ];
 
 export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [pools, setPools] = useState<SwimmingPool[]>(() => {
+    const saved = localStorage.getItem('aqua_pools');
+    return saved ? JSON.parse(saved) : POOLS_DATA;
+  });
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedKategori, setSelectedKategori] = useState<string>('Semua');
   const [selectedJenis, setSelectedJenis] = useState<string>('Semua');
-  const [filteredPools, setFilteredPools] = useState<SwimmingPool[]>(POOLS_DATA);
+  const [filteredPools, setFilteredPools] = useState<SwimmingPool[]>(pools);
   const [selectedPool, setSelectedPool] = useState<SwimmingPool | null>(null);
 
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -808,8 +824,17 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [mapZoom, setMapZoom] = useState<number>(12);
   const [activeTab, setActiveTab] = useState<'directory' | 'nearest' | 'detail'>('directory');
 
+  // Interactive location picker states
+  const [isSelectingLocation, setIsSelectingLocation] = useState<boolean>(false);
+  const [formCoords, setFormCoords] = useState<[number, number] | null>(null);
+
+  // Sync to localStorage
   useEffect(() => {
-    let result = POOLS_DATA;
+    localStorage.setItem('aqua_pools', JSON.stringify(pools));
+  }, [pools]);
+
+  useEffect(() => {
+    let result = pools;
 
     if (selectedKategori !== 'Semua') {
       result = result.filter(p => p.kategori === selectedKategori);
@@ -829,7 +854,7 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     setFilteredPools(result);
-  }, [searchQuery, selectedKategori, selectedJenis]);
+  }, [pools, searchQuery, selectedKategori, selectedJenis]);
 
   const handleSelectPool = (pool: SwimmingPool | null) => {
     setSelectedPool(pool);
@@ -840,13 +865,38 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const addPool = (poolData: Omit<SwimmingPool, 'id'>) => {
+    const newPool: SwimmingPool = {
+      ...poolData,
+      id: `pool-${Date.now()}`
+    };
+    setPools(prev => [newPool, ...prev]);
+  };
+
+  const updatePool = (id: string, updated: Partial<SwimmingPool>) => {
+    setPools(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    if (selectedPool?.id === id) {
+      setSelectedPool(prev => prev ? { ...prev, ...updated } : null);
+    }
+  };
+
+  const deletePool = (id: string) => {
+    setPools(prev => prev.filter(p => p.id !== id));
+    if (selectedPool?.id === id) {
+      setSelectedPool(null);
+      setActiveTab('directory');
+    }
+  };
+
   const findNearestPool = (lat: number, lng: number) => {
     setUserLocation([lat, lng]);
     const clickedPoint = turf.point([lng, lat]);
     let closestPool: SwimmingPool | null = null;
     let minDistance = Infinity;
 
-    POOLS_DATA.forEach(pool => {
+    pools.forEach(pool => {
+      // Exclude pools that are closed
+      if (pool.status === 'Tutup') return;
       const dist = turf.distance(clickedPoint, turf.point([pool.longitude, pool.latitude]), { units: 'kilometers' });
       if (dist < minDistance) { minDistance = dist; closestPool = pool; }
     });
@@ -870,13 +920,16 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <SpatialContext.Provider value={{
-      pools: POOLS_DATA, filteredPools, searchQuery, setSearchQuery,
+      pools, filteredPools, searchQuery, setSearchQuery,
       selectedKategori, setSelectedKategori, selectedJenis, setSelectedJenis,
       selectedPool, setSelectedPool: handleSelectPool,
       userLocation, setUserLocation,
       nearestPool, nearestDistance, nearestRouteGeoJson,
       findNearestPool, clearNearestAnalysis,
-      mapCenter, setMapCenter, mapZoom, setMapZoom, activeTab, setActiveTab
+      mapCenter, setMapCenter, mapZoom, setMapZoom, activeTab, setActiveTab,
+      addPool, updatePool, deletePool,
+      isSelectingLocation, setIsSelectingLocation,
+      formCoords, setFormCoords
     }}>
       {children}
     </SpatialContext.Provider>

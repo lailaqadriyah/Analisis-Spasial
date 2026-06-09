@@ -18,6 +18,9 @@ const getPoolPinIcon = (pool: SwimmingPool, isSelected: boolean) => {
   if (pool.kategori === 'Atlet') color = '#7c3aed'; // purple for athlete pools
   else if (pool.jenisKolam === 'Indoor') color = '#0e7490'; // deep teal for indoor
 
+  if (pool.status === 'Renovasi') color = '#f59e0b'; // orange for renovation
+  else if (pool.status === 'Tutup') color = '#64748b'; // slate/gray for closed
+
   if (isSelected) {
     color = '#db2777'; // Highlight selected pool with pink
   }
@@ -85,13 +88,16 @@ const MapController: React.FC = () => {
   return null;
 };
 
-// Map click event observer for finding nearest pool
+// Map click event observer for finding nearest pool or picking coordinates
 const MapEventsHandler: React.FC = () => {
-  const { activeTab, findNearestPool } = useSpatial();
+  const { activeTab, findNearestPool, isSelectingLocation, setIsSelectingLocation, setFormCoords } = useSpatial();
 
   useMapEvents({
     click(e) {
-      if (activeTab === 'nearest') {
+      if (isSelectingLocation) {
+        setFormCoords([e.latlng.lat, e.latlng.lng]);
+        setIsSelectingLocation(false);
+      } else if (activeTab === 'nearest') {
         findNearestPool(e.latlng.lat, e.latlng.lng);
       }
     },
@@ -107,7 +113,9 @@ export const Map: React.FC = () => {
     setSelectedPool,
     userLocation,
     nearestRouteGeoJson,
-    activeTab
+    activeTab,
+    isSelectingLocation,
+    formCoords
   } = useSpatial();
 
   // Custom pool popup layout
@@ -146,17 +154,21 @@ export const Map: React.FC = () => {
             >
               <Popup closeButton={false}>
                 <div style={{ padding: '0px', width: '220px' }}>
-                  {/* Decorative card top bar colored by kategori */}
+                  {/* Decorative card top bar colored by status/kategori */}
                   <div style={{
                     height: '5px',
-                    background: pool.kategori === 'Atlet'
-                      ? 'linear-gradient(90deg,#7c3aed,#6d28d9)'
-                      : pool.jenisKolam === 'Indoor'
-                        ? 'linear-gradient(90deg,#0e7490,#0891b2)'
-                        : 'linear-gradient(90deg,#0891b2,#06b6d4)'
+                    background: pool.status === 'Tutup'
+                      ? '#64748b'
+                      : pool.status === 'Renovasi'
+                        ? '#f59e0b'
+                        : pool.kategori === 'Atlet'
+                          ? 'linear-gradient(90deg,#7c3aed,#6d28d9)'
+                          : pool.jenisKolam === 'Indoor'
+                            ? 'linear-gradient(90deg,#0e7490,#0891b2)'
+                            : 'linear-gradient(90deg,#0891b2,#06b6d4)'
                   }} />
                   <div style={{ padding: '12px' }}>
-                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '6px', flexWrap: 'wrap' }}>
                       <span style={{
                         fontSize: '0.58rem', padding: '2px 7px', borderRadius: '9999px', fontWeight: 700,
                         background: pool.kategori === 'Atlet' ? '#f5f3ff' : 'var(--bg-accent-light)',
@@ -172,6 +184,14 @@ export const Map: React.FC = () => {
                         border: `1px solid ${pool.jenisKolam === 'Indoor' ? '#fde68a' : '#a7f3d0'}`,
                       }}>
                         {pool.jenisKolam}
+                      </span>
+                      <span style={{
+                        fontSize: '0.58rem', padding: '2px 7px', borderRadius: '9999px', fontWeight: 700,
+                        background: pool.status === 'Tutup' ? '#f1f5f9' : pool.status === 'Renovasi' ? '#fffbeb' : '#ecfdf5',
+                        color: pool.status === 'Tutup' ? '#475569' : pool.status === 'Renovasi' ? '#b45309' : '#065f46',
+                        border: `1px solid ${pool.status === 'Tutup' ? '#cbd5e1' : pool.status === 'Renovasi' ? '#fde68a' : '#a7f3d0'}`,
+                      }}>
+                        {pool.status || 'Buka'}
                       </span>
                     </div>
                     <h4 style={{ margin: '2px 0 6px 0', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
@@ -198,6 +218,24 @@ export const Map: React.FC = () => {
         {/* User Search Query Location */}
         {userLocation && (
           <Marker position={userLocation} icon={queryCrosshairIcon} />
+        )}
+
+        {/* Interactive Coordinates Picker Target Marker */}
+        {formCoords && (
+          <Marker
+            position={formCoords}
+            icon={L.divIcon({
+              html: `
+                <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                  <div style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background-color: rgba(16, 185, 129, 0.15); border: 2.5px dashed #10b981; animation: rotateDashed 6s infinite linear;"></div>
+                  <div style="width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; border: 2.5px solid #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.25);"></div>
+                </div>
+              `,
+              className: 'custom-form-coords',
+              iconSize: [32, 32],
+              iconAnchor: [16, 16],
+            })}
+          />
         )}
 
         {/* Nearest Pool routing line */}
@@ -241,6 +279,36 @@ export const Map: React.FC = () => {
         >
           <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444', animation: 'ping 1s infinite' }}></div>
           Mode Cari Terdekat Aktif
+        </div>
+      )}
+
+      {/* Floating coordinates picker info box */}
+      {isSelectingLocation && (
+        <div
+          className="animate-fade-in"
+          style={{
+            position: 'absolute',
+            top: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(16, 185, 129, 0.95)',
+            color: 'white',
+            backdropFilter: 'blur(8px)',
+            padding: '12px 24px',
+            borderRadius: '30px',
+            fontSize: '0.825rem',
+            fontWeight: 600,
+            zIndex: 1000,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: 'var(--shadow-lg)',
+            border: '1px solid rgba(255,255,255,0.2)',
+          }}
+        >
+          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ffffff', animation: 'ping 1s infinite' }}></div>
+          Klik pada peta untuk menentukan koordinat kolam!
         </div>
       )}
     </div>
