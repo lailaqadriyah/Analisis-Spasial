@@ -1,6 +1,3 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import * as turf from '@turf/turf';
-
 export interface SwimmingPool {
   id: string;
   name: string;
@@ -9,8 +6,8 @@ export interface SwimmingPool {
   description: string;
   address: string;
   district: string;
-  ticketPrice: string;     // string karena harga bervariasi (weekday/weekend, anak/dewasa)
-  ticketPriceMin: number;  // untuk keperluan sorting numerik
+  ticketPrice: string;
+  ticketPriceMin: number;
   rating: number;
   openingHours: string;
   latitude: number;
@@ -20,51 +17,7 @@ export interface SwimmingPool {
   imageUrl?: string;
 }
 
-interface SpatialContextType {
-  pools: SwimmingPool[];
-  filteredPools: SwimmingPool[];
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
-  selectedKategori: string;        // 'Semua' | 'Rekreasi' | 'Atlet'
-  setSelectedKategori: (v: string) => void;
-  selectedJenis: string;           // 'Semua' | 'Indoor' | 'Outdoor'
-  setSelectedJenis: (v: string) => void;
-  selectedPool: SwimmingPool | null;
-  setSelectedPool: (pool: SwimmingPool | null) => void;
-  userLocation: [number, number] | null;
-  setUserLocation: (coords: [number, number] | null) => void;
-  nearestPool: SwimmingPool | null;
-  nearestDistance: number | null;
-  nearestRouteGeoJson: any | null;
-  findNearestPool: (lat: number, lng: number) => void;
-  clearNearestAnalysis: () => void;
-  mapCenter: [number, number];
-  setMapCenter: (center: [number, number]) => void;
-  mapZoom: number;
-  setMapZoom: (zoom: number) => void;
-  activeTab: 'directory' | 'nearest' | 'detail';
-  setActiveTab: (tab: 'directory' | 'nearest' | 'detail') => void;
-  
-  // CRUD
-  addPool: (pool: Omit<SwimmingPool, 'id'>) => void;
-  updatePool: (id: string, updated: Partial<SwimmingPool>) => void;
-  deletePool: (id: string) => void;
-  isSelectingLocation: boolean;
-  setIsSelectingLocation: (val: boolean) => void;
-  formCoords: [number, number] | null;
-  setFormCoords: (coords: [number, number] | null) => void;
-}
-
-const SpatialContext = createContext<SpatialContextType | undefined>(undefined);
-
-const PADANG_CENTER: [number, number] = [-0.9305, 100.3598]; // sekitar GOR Agus Salim
-
-// ============================================================
-// DATABASE 46 KOLAM RENANG KOTA PADANG
-// Koordinat diparse dari data spreadsheet pengguna.
-// Format asli pakai titik ribuan → dikonversi ke desimal presisi.
-// ============================================================
-const POOLS_DATA: SwimmingPool[] = [
+export const INITIAL_POOLS: SwimmingPool[] = [
   {
     id: 'pool-01-palapa',
     name: 'Kolam Renang Palapa',
@@ -390,7 +343,7 @@ const POOLS_DATA: SwimmingPool[] = [
     name: 'Kolam Renang Silo',
     kategori: 'Rekreasi',
     jenisKolam: 'Outdoor',
-    description: 'Kolam renang warga di Koto Tangah dengan air sumur pegunungan yang jernih dan sejuk.',
+    description: 'Kolam renang warga di Koto Tangah dengan air sumur pegunungan yang jernih and sejuk.',
     address: 'Koto Tangah, Padang',
     district: 'Koto Tangah',
     ticketPrice: 'Rp 5.000',
@@ -607,7 +560,7 @@ const POOLS_DATA: SwimmingPool[] = [
     openingHours: '08:00 – 19:00 WIB',
     latitude: -0.9585801,
     longitude: 100.3549528,
-    facilities: ['Indoor Pool Bersih', 'Shower & Bilas Sabun', 'WiFi', 'AC'],
+    facilities: ['Indoor Pool Clean', 'Shower & Bilas Sabun', 'WiFi', 'AC'],
   },
   {
     id: 'pool-35-teratai',
@@ -800,204 +753,5 @@ const POOLS_DATA: SwimmingPool[] = [
     latitude: -0.9392783,
     longitude: 100.4682755,
     facilities: ['Pemanas Air', 'Kamar Mandi Eropa', 'Ruang Santai', 'WiFi'],
-  },
+  }
 ];
-
-export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [pools, setPools] = useState<SwimmingPool[]>([]);
-
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedKategori, setSelectedKategori] = useState<string>('Semua');
-  const [selectedJenis, setSelectedJenis] = useState<string>('Semua');
-  const [filteredPools, setFilteredPools] = useState<SwimmingPool[]>(pools);
-  const [selectedPool, setSelectedPool] = useState<SwimmingPool | null>(null);
-
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [nearestPool, setNearestPool] = useState<SwimmingPool | null>(null);
-  const [nearestDistance, setNearestDistance] = useState<number | null>(null);
-  const [nearestRouteGeoJson, setNearestRouteGeoJson] = useState<any>(null);
-
-  const [mapCenter, setMapCenter] = useState<[number, number]>(PADANG_CENTER);
-  const [mapZoom, setMapZoom] = useState<number>(12);
-  const [activeTab, setActiveTab] = useState<'directory' | 'nearest' | 'detail'>('directory');
-
-  // Interactive location picker states
-  const [isSelectingLocation, setIsSelectingLocation] = useState<boolean>(false);
-  const [formCoords, setFormCoords] = useState<[number, number] | null>(null);
-
-  // Fetch pools from backend on mount
-  useEffect(() => {
-    const fetchPools = async () => {
-      try {
-        const response = await fetch('http://localhost:5000/api/pools');
-        if (!response.ok) throw new Error('Failed to fetch from backend');
-        const data = await response.json();
-        setPools(data);
-      } catch (err) {
-        console.error('Failed to load pools from backend API, using local fallback:', err);
-        const saved = localStorage.getItem('aqua_pools');
-        setPools(saved ? JSON.parse(saved) : POOLS_DATA);
-      }
-    };
-    fetchPools();
-  }, []);
-
-  // Sync to localStorage as backup/cache
-  useEffect(() => {
-    if (pools.length > 0) {
-      localStorage.setItem('aqua_pools', JSON.stringify(pools));
-    }
-  }, [pools]);
-
-  useEffect(() => {
-    let result = pools;
-
-    if (selectedKategori !== 'Semua') {
-      result = result.filter(p => p.kategori === selectedKategori);
-    }
-    if (selectedJenis !== 'Semua') {
-      result = result.filter(p => p.jenisKolam === selectedJenis);
-    }
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        p =>
-          p.name.toLowerCase().includes(q) ||
-          p.address.toLowerCase().includes(q) ||
-          p.district.toLowerCase().includes(q) ||
-          p.facilities.some(f => f.toLowerCase().includes(q))
-      );
-    }
-
-    setFilteredPools(result);
-  }, [pools, searchQuery, selectedKategori, selectedJenis]);
-
-  const handleSelectPool = (pool: SwimmingPool | null) => {
-    setSelectedPool(pool);
-    if (pool) {
-      setMapCenter([pool.latitude, pool.longitude]);
-      setMapZoom(15);
-      setActiveTab('detail');
-    }
-  };
-
-  const addPool = async (poolData: Omit<SwimmingPool, 'id'>) => {
-    const tempId = `pool-${Date.now()}`;
-    const newPoolTemp: SwimmingPool = {
-      ...poolData,
-      id: tempId
-    };
-
-    try {
-      const response = await fetch('http://localhost:5000/api/pools', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newPoolTemp),
-      });
-      if (!response.ok) throw new Error('Failed to add pool to backend');
-      const savedPool = await response.json();
-      setPools(prev => [savedPool, ...prev]);
-    } catch (err) {
-      console.error('Error syncing addPool to backend:', err);
-      // Fallback local update
-      setPools(prev => [newPoolTemp, ...prev]);
-    }
-  };
-
-  const updatePool = async (id: string, updated: Partial<SwimmingPool>) => {
-    // Optimistic local update
-    setPools(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
-    if (selectedPool?.id === id) {
-      setSelectedPool(prev => prev ? { ...prev, ...updated } : null);
-    }
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/pools/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updated),
-      });
-      if (!response.ok) throw new Error('Failed to update pool in backend');
-      const savedPool = await response.json();
-      // Sync local state with exact database output
-      setPools(prev => prev.map(p => p.id === id ? savedPool : p));
-    } catch (err) {
-      console.error('Error syncing updatePool to backend:', err);
-    }
-  };
-
-  const deletePool = async (id: string) => {
-    // Optimistic local delete
-    setPools(prev => prev.filter(p => p.id !== id));
-    if (selectedPool?.id === id) {
-      setSelectedPool(null);
-      setActiveTab('directory');
-    }
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/pools/${id}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error('Failed to delete pool from backend');
-    } catch (err) {
-      console.error('Error syncing deletePool to backend:', err);
-    }
-  };
-
-  const findNearestPool = (lat: number, lng: number) => {
-    setUserLocation([lat, lng]);
-    const clickedPoint = turf.point([lng, lat]);
-    let closestPool: SwimmingPool | null = null;
-    let minDistance = Infinity;
-
-    pools.forEach(pool => {
-      // Exclude pools that are closed
-      if (pool.status === 'Tutup') return;
-      const dist = turf.distance(clickedPoint, turf.point([pool.longitude, pool.latitude]), { units: 'kilometers' });
-      if (dist < minDistance) { minDistance = dist; closestPool = pool; }
-    });
-
-    if (closestPool) {
-      setNearestPool(closestPool);
-      setNearestDistance(parseFloat(minDistance.toFixed(2)));
-      setNearestRouteGeoJson(turf.lineString([[lng, lat], [(closestPool as SwimmingPool).longitude, (closestPool as SwimmingPool).latitude]]));
-      setActiveTab('nearest');
-      const avgLat = (lat + (closestPool as SwimmingPool).latitude) / 2;
-      const avgLng = (lng + (closestPool as SwimmingPool).longitude) / 2;
-      setMapCenter([avgLat, avgLng]);
-      setMapZoom(13);
-    }
-  };
-
-  const clearNearestAnalysis = () => {
-    setUserLocation(null); setNearestPool(null); setNearestDistance(null);
-    setNearestRouteGeoJson(null); setActiveTab('directory');
-  };
-
-  return (
-    <SpatialContext.Provider value={{
-      pools, filteredPools, searchQuery, setSearchQuery,
-      selectedKategori, setSelectedKategori, selectedJenis, setSelectedJenis,
-      selectedPool, setSelectedPool: handleSelectPool,
-      userLocation, setUserLocation,
-      nearestPool, nearestDistance, nearestRouteGeoJson,
-      findNearestPool, clearNearestAnalysis,
-      mapCenter, setMapCenter, mapZoom, setMapZoom, activeTab, setActiveTab,
-      addPool, updatePool, deletePool,
-      isSelectingLocation, setIsSelectingLocation,
-      formCoords, setFormCoords
-    }}>
-      {children}
-    </SpatialContext.Provider>
-  );
-};
-
-export const useSpatial = () => {
-  const ctx = useContext(SpatialContext);
-  if (!ctx) throw new Error('useSpatial must be used within a SpatialProvider');
-  return ctx;
-};
