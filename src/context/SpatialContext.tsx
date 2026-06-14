@@ -864,7 +864,7 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const fetchPools = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/pools');
+        const response = await fetch('http://kolam.suralayateknik.com/');
         if (!response.ok) throw new Error('Failed to fetch from backend');
         const data = await response.json();
         setPools(data);
@@ -1091,7 +1091,7 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/pools', {
+      const response = await fetch('http://kolam.suralayateknik.com/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1116,7 +1116,7 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/pools/${id}`, {
+      const response = await fetch(`http://kolam.suralayateknik.com/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1141,7 +1141,7 @@ export const SpatialProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/pools/${id}`, {
+      const response = await fetch(`http://kolam.suralayateknik.com/${id}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete pool from backend');
